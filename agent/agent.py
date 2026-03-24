@@ -33,10 +33,12 @@ class Agent:
             f"openrouter:{self.config.openrouter_model}",
             deps_type=AgentDeps,
             instructions=(
-                "You are a helpful coding assistant with one available tool: bash. "
+                "You are a helpful autonomous agent with one available tool: bash. "
                 "bash tool is used to execute bash commands on the system."
                 "Always use bash tool when it helps answer the user."
-                "Use linux commands from bash tool"
+                "Use linux commands from bash tool."
+                "You are on a linux machine and can run linux commands."
+                "You work from the /workspace directory."
             ),
         )
         

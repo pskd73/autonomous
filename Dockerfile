@@ -14,10 +14,7 @@ RUN pip install --no-cache-dir -r /app/agent/requirements.txt
 
 # Copy application
 COPY agent /app/agent
-COPY scripts /app/scripts
-COPY test_client.py /app/test_client.py
-
-RUN chmod +x /app/scripts/start.sh
+COPY test-client.html /app/test-client.html
 
 EXPOSE 8000
 
@@ -26,4 +23,4 @@ ENV PORT=8000
 ENV WORKSPACE_PATH=/workspace
 
 # Run single websocket server
-CMD ["/app/scripts/start.sh"]
+CMD ["python", "/app/agent/main.py"]
