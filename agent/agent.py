@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, AsyncIterator
 
 from config import Config
 from bash import BashTool
@@ -60,7 +60,14 @@ class Agent:
         message: str,
         context: Optional[Dict[str, Any]] = None,
         session_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Unified chat interface.
+
+        Yields events:
+        - {"type": "delta", "content": "<text>"}
+        - {"type": "final", "result": {...}}
+        """
         session_key = session_id or "default"
 
         if session_key not in self.sessions:
@@ -79,21 +86,33 @@ class Agent:
             prompt = f"{prompt}\n\nMemory ({key}):\n{memory.recall(key)}"
 
         deps = AgentDeps(config=self.config, tools=self.tools, context=context)
-        result = await self.pydantic_agent.run(
+
+        full_output_parts: list[str] = []
+
+        async with self.pydantic_agent.run_stream(
             prompt,
             deps=deps,
             message_history=message_history if message_history else None,
-        )
+        ) as streamed_result:
+            async for delta in streamed_result.stream_text(delta=True, debounce_by=None):
+                if delta:
+                    full_output_parts.append(delta)
+                    yield {"type": "delta", "content": delta}
 
+            last_messages = streamed_result.all_messages()
+
+        full_output = "".join(full_output_parts)
         for key, memory in self.memories.items():
-            memory.memorise(message, str(result.output))
+            memory.memorise(message, full_output)
 
-        session["message_history"] = result.all_messages()
-
-        return {
-            "content": str(result.output),
-            "tool_calls": deps.tool_results if deps.tool_results else None,
-            "session_id": session_key,
+        session["message_history"] = last_messages
+        yield {
+            "type": "final",
+            "result": {
+                "content": full_output,
+                "tool_calls": deps.tool_results if deps.tool_results else None,
+                "session_id": session_key,
+            },
         }
 
     async def cleanup(self):
