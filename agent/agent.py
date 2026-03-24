@@ -4,7 +4,8 @@ from typing import Dict, Any, Optional, AsyncIterator
 
 from config import Config
 from bash import BashTool
-from memory import MemoryInterface
+from memory import MemoryEngineInterface, DummyMemoryEngine, extract_facts
+from side_effect import side_effect
 
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai import RunContext
@@ -27,7 +28,7 @@ class Agent:
         }
 
         self.sessions: Dict[str, Dict[str, Any]] = {}
-        self.memories: Dict[str, MemoryInterface] = {}
+        self.memory_engines: Dict[str, MemoryEngineInterface] = {}
 
         self.pydantic_agent = PydanticAgent(
             f"openrouter:{self.config.openrouter_model}",
@@ -82,8 +83,10 @@ class Agent:
         if context:
             prompt = f"{message}\n\nContext:\n{json.dumps(context, indent=2, default=str)}"
 
-        for key, memory in self.memories.items():
-            prompt = f"{prompt}\n\nMemory ({key}):\n{memory.recall(key)}"
+        for key, engine in self.memory_engines.items():
+            memory = side_effect(engine.recall, message)
+            if memory is not None:
+                prompt = f"{prompt}\n\nMemory ({key}):\n{memory}"
 
         deps = AgentDeps(config=self.config, tools=self.tools, context=context)
 
@@ -102,8 +105,10 @@ class Agent:
             last_messages = streamed_result.all_messages()
 
         full_output = "".join(full_output_parts)
-        for key, memory in self.memories.items():
-            memory.memorise(message, full_output)
+
+        facts = side_effect(extract_facts, message, full_output) or []
+        for key, engine in self.memory_engines.items():
+            side_effect(engine.memorise, message, full_output, facts)
 
         session["message_history"] = last_messages
         yield {
